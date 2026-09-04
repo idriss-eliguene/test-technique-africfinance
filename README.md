@@ -31,7 +31,7 @@ flowchart LR
     GH --> CI[GitHub Actions]
     CI --> TEST[Build / Tests]
     TEST --> SAST[SAST - Semgrep]
-    SAST --> SCA[SCA - Dependency-Check]
+    SAST --> SCA[SCA - Trivy FS]
     SCA --> BUILD[Docker Build]
     BUILD --> TRIVY[Trivy]
     TRIVY -->|PASS| GATE[Promotion Gate]
@@ -109,8 +109,8 @@ Les contrôles sont appliqués sur des surfaces complémentaires :
 |---------|----------|-------|----------|
 | Fonctionnel | Tests | Maven / JUnit | Validation du comportement |
 | Code | SAST | Semgrep | Analyse statique |
-| Supply chain | SCA | OWASP Dependency-Check | Vulnérabilités des dépendances |
-| Container | Image scanning | Trivy | Vulnérabilités de l'artefact |
+| Dépendances applicatives | SCA | Trivy filesystem | Vulnérabilités des composants |
+| Container | Image scanning | Trivy image | Vulnérabilités de l'artefact |
 | Runtime | Least privilege | Docker non-root | Réduction des privilèges |
 
 Le DAST HTTP avec OWASP ZAP appartient à une intégration ultérieure et n'est
@@ -172,13 +172,13 @@ Il orchestre les étapes suivantes avec Java 21 et le cache Maven :
 2. tests Maven ;
 3. packaging du JAR ;
 4. SAST Semgrep ;
-5. SCA OWASP Dependency-Check ;
+5. SCA Trivy filesystem ;
 6. construction de l'image Docker ;
 7. gate Trivy sur l'image construite ;
 8. authentification et publication dans GHCR.
 
 Le workflow ne contient actuellement aucune connexion SSH ni aucun déploiement
-VPS. Le rapport Dependency-Check est conservé comme artefact du workflow.
+VPS.
 
 Le workflow utilise les permissions minimales `contents: read` et
 `packages: write`. L'authentification GHCR repose sur `GITHUB_TOKEN` et ne
@@ -216,7 +216,7 @@ pipeline avant publication.
 Le fichier `Jenkinsfile` fournit l'équivalent Jenkins de la chaîne :
 
 ```text
-Checkout → Tests → Packaging → SAST → SCA → Docker Build → Trivy
+Checkout → Tests → Packaging → SAST → Trivy FS/SCA → Docker Build → Trivy Image
 ```
 
 Les étapes Maven peuvent utiliser un agent conteneurisé Java 21/Maven. Les
@@ -259,14 +259,10 @@ seront intégrés. Le runtime Docker applique un utilisateur non-root.
 
 | Secret | Utilisation | Portée |
 |--------|-------------|--------|
-| `NVD_API_KEY` | Accès NVD utilisé par OWASP Dependency-Check | Secret GitHub requis, jamais versionné |
 | `GITHUB_TOKEN` | Authentification et publication dans GHCR | Token natif du workflow, permission `packages: write` |
 | `ghcr-credentials` | Authentification GHCR du Jenkinsfile | Credential Jenkins username/password sur l'agent de publication |
 
-Le secret `NVD_API_KEY` est stocké dans GitHub Actions Secrets et transmis à
-Dependency-Check par variable d'environnement. Il n'est jamais affiché ni
-versionné. Son absence arrête explicitement l'analyse SCA. Les credentials
-Jenkins `nvd-api-key` et `ghcr-credentials` doivent être créés dans Jenkins
+Les credentials Jenkins `ghcr-credentials` doivent être créés dans Jenkins
 sans valeur en clair dans le dépôt et avec une portée minimale.
 
 ## Exploitation

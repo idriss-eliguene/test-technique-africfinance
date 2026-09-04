@@ -53,20 +53,21 @@ pipeline {
         }
 
         stage('SCA') {
-            steps {
-                echo 'Analyse SCA des dépendances Maven'
-                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
-                    sh '''
-                        if [ -z "$NVD_API_KEY" ]; then
-                          echo "Le credential nvd-api-key est requis pour l'analyse Dependency-Check."
-                          exit 1
-                        fi
-                        mvn org.owasp:dependency-check-maven:12.1.0:check \
-                          -DfailBuildOnCVSS=7.0 \
-                          -Dformats=HTML,JSON \
-                          -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
-                    '''
+            agent {
+                docker {
+                    image 'ghcr.io/aquasecurity/trivy:0.70.0'
                 }
+            }
+            steps {
+                echo 'Analyse SCA du repository avec Trivy'
+                sh '''
+                    trivy fs \
+                      --scanners vuln \
+                      --severity HIGH,CRITICAL \
+                      --ignore-unfixed \
+                      --exit-code 1 \
+                      .
+                '''
             }
         }
 
