@@ -90,43 +90,111 @@ Puis :
 curl http://localhost:8080/
 ```
 
-## Moteurs CI/CD fournis
+## Choix du moteur CI/CD
 
-### GitHub Actions
+Le sujet technique autorise l'utilisation de Jenkins, GitHub Actions ou GitLab
+CI.
 
-GitHub Actions est le pipeline de référence et l'implémentation opérationnelle
-prévue pour ce dépôt. Il est déclenché automatiquement sur un push vers
-`master` et peut également être lancé manuellement avec `workflow_dispatch`.
-Il exécute les tests Maven puis le packaging du JAR. Son exécution réelle doit
-être confirmée dans GitHub après publication du dépôt.
+Pour cette réalisation, GitHub Actions a été retenu comme pipeline de
+référence car le dépôt du test est hébergé sur GitHub. Ce choix permet
+d'exécuter et de démontrer le pipeline directement depuis le dépôt, sans
+nécessiter le déploiement d'une infrastructure CI supplémentaire.
 
-### Jenkins
+Le dépôt contient donc :
 
-Le `Jenkinsfile` fournit une implémentation alternative de la même logique CI :
-checkout, tests Maven et packaging. Il n'a pas été exécuté dans le cadre du
-test, car aucune instance Jenkins n'est disponible ; il ne doit donc pas être
-présenté comme certifié.
+- `.github/workflows/ci-cd.yml` : pipeline principal utilisé pour l'exécution
+  du test sur GitHub ;
+- `Jenkinsfile` : implémentation alternative du pipeline pour un environnement
+  Jenkins.
 
-| Pipeline | Implémenté | Exécuté | Rôle |
-|----------|------------|---------|------|
-| GitHub Actions | Oui | À confirmer après push | Pipeline de référence |
-| Jenkinsfile | Oui | Non | Variante compatible Jenkins |
+### GitHub Actions — pipeline de référence
 
-Les deux pipelines suivent le même flux : source, tests Maven, puis packaging
-du JAR, avec Java 21.
+GitHub Actions constitue l'implémentation opérationnelle retenue pour ce test.
+
+Il permet notamment :
+
+- le déclenchement automatique sur un push vers `master` ;
+- l'exécution directe depuis le dépôt GitHub ;
+- l'intégration des tests et contrôles DevSecOps ;
+- l'évolution vers la construction et la publication de l'image Docker ;
+- l'évolution vers le déploiement automatisé sur le VPS.
+
+L'objectif est de pouvoir démontrer réellement la chaîne Zero-to-Deploy dans
+l'environnement où le dépôt est hébergé.
+
+### Jenkins — implémentation alternative
+
+Un `Jenkinsfile` est également livré afin de fournir une implémentation
+équivalente pour une infrastructure Jenkins.
+
+Le Jenkinsfile suit autant que possible les mêmes étapes et les mêmes contrôles
+que le workflow GitHub Actions.
+
+Il permet de montrer que la conception du pipeline n'est pas dépendante
+exclusivement de GitHub Actions et qu'elle peut être transposée vers un moteur
+CI/CD Jenkins.
+
+Dans le cadre de ce test, aucune instance Jenkins n'étant disponible, le
+Jenkinsfile est fourni et revu structurellement mais n'est pas présenté comme
+ayant été exécuté ou validé sur un serveur Jenkins.
+
+| Moteur | Fichier | Rôle | État de validation |
+|---|---|---|---|
+| GitHub Actions | `.github/workflows/ci-cd.yml` | Pipeline de référence du test | Syntaxe validée localement ; exécution GitHub à confirmer après push |
+| Jenkins | `Jenkinsfile` | Implémentation alternative pour Jenkins | Fourni et revu ; non exécuté faute d'instance Jenkins |
+
+Lorsque de nouvelles étapes sont ajoutées au pipeline (SAST, SCA, Trivy,
+Registry, déploiement, DAST), la cohérence fonctionnelle entre GitHub Actions
+et Jenkins est maintenue autant que raisonnablement possible.
+
+En résumé : GitHub Actions est le pipeline effectivement choisi pour réaliser
+et tester le sujet sur GitHub ; le Jenkinsfile est la deuxième implémentation
+livrée pour démontrer la compatibilité avec Jenkins.
+
+## Sécurité applicative
+
+Les contrôles de sécurité sont placés après les tests et le packaging, avant
+les futures étapes de construction ou de promotion d'une image. Ils sont
+bloquants en cas d'erreur réelle de l'outil ou de détection au-dessus du seuil
+configuré.
+
+### SAST — Semgrep
+
+Semgrep analyse le code Java source avec le ruleset `p/java`. Il s'exécute dans
+GitHub Actions après le packaging, sans secret externe, et bloque le pipeline
+si l'outil rencontre une erreur ou signale une règle en échec. Le même contrôle
+est fourni dans le Jenkinsfile via l'image Docker Semgrep `1.139.0`, mais n'y a
+pas été exécuté.
+
+Ce contrôle détecte des patterns connus ; il ne remplace ni une revue de code
+ni des tests de sécurité complets.
+
+### SCA — OWASP Dependency-Check
+
+Dependency-Check analyse les dépendances Maven et génère les rapports HTML et
+JSON dans `target/dependency-check-report.*`. Une vulnérabilité de score CVSS
+supérieur ou égal à `7.0` est bloquante, seuil retenu pour traiter les risques
+élevés sans rendre le pipeline excessivement strict pour ce test.
+
+Le workflow publie ces rapports comme artefact GitHub Actions. La variable
+`NVD_API_KEY` est un secret GitHub optionnel : elle peut améliorer la fiabilité
+et les performances des téléchargements NVD, mais aucune clé n'est inventée
+ou stockée dans le dépôt. Sans clé, l'exécution peut être ralentie ou limitée
+par les restrictions du service NVD.
+
+Les rapports et données locaux générés par cet outil ne sont pas commités.
+
+Le flux CI est le suivant :
 
 ```mermaid
-flowchart TD
-    SRC[Code source] --> GHA[GitHub Actions]
-    SRC --> JENKINS[Jenkins]
-    GHA --> TESTS1[Tests Maven]
-    JENKINS --> TESTS2[Tests Maven]
-    TESTS1 --> PKG1[Packaging JAR]
-    TESTS2 --> PKG2[Packaging JAR]
+flowchart LR
+    BUILD[Build / Tests] --> SAST[SAST — Semgrep]
+    SAST --> SCA[SCA — Dependency-Check]
 ```
 
-GitHub Actions est utilisé comme implémentation opérationnelle dans le cadre
-du test.
+Ces contrôles sont implémentés dans les deux pipelines, mais leur exécution
+GitHub Actions doit être confirmée après push. Le Jenkinsfile reste une
+variante non certifiée faute d'instance Jenkins disponible.
 
 ## Architecture cible
 
@@ -153,7 +221,7 @@ Cette architecture représente la cible du test. Les composants seront ajoutés 
 - [x] Test applicatif
 - [x] Conteneurisation Docker
 - [x] Pipeline GitHub Actions
-- [ ] SAST / SCA
+- [x] SAST / SCA
 - [ ] Scan de l'image
 - [ ] Publication GHCR
 - [ ] Déploiement SSH

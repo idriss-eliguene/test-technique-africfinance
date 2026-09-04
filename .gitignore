@@ -1,5 +1,7 @@
 # Artefacts Maven
 target/
+dependency-check-report.*
+.dependency-check/
 
 # Fichiers générés par les IDE
 .idea/
@@ -8,4 +10,3 @@ target/
 
 # Fichiers système
 .DS_Store
-

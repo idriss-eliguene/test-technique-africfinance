@@ -27,3 +27,25 @@ jobs:
 
       - name: Construire le package Maven
         run: mvn package -DskipTests
+
+      - name: SAST — analyser le code avec Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/java
+
+      - name: SCA — analyser les dépendances Maven
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: >-
+          mvn org.owasp:dependency-check-maven:12.1.0:check
+          -DfailBuildOnCVSS=7.0
+          -Dformats=HTML,JSON
+          -Dnvd.api.key="$NVD_API_KEY"
+
+      - name: Publier le rapport Dependency-Check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-dependency-check
+          path: target/dependency-check-report.*
+          if-no-files-found: warn

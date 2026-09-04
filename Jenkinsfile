@@ -31,6 +31,29 @@ pipeline {
                 sh 'mvn package -DskipTests'
             }
         }
+
+        stage('SAST') {
+            agent {
+                docker {
+                    image 'semgrep/semgrep:1.139.0'
+                }
+            }
+            steps {
+                echo 'Analyse SAST du code source avec Semgrep'
+                sh 'semgrep scan --config p/java --error .'
+            }
+        }
+
+        stage('SCA') {
+            steps {
+                echo 'Analyse SCA des dépendances Maven'
+                sh '''
+                    mvn org.owasp:dependency-check-maven:12.1.0:check \
+                      -DfailBuildOnCVSS=7.0 \
+                      -Dformats=HTML,JSON
+                '''
+            }
+        }
     }
 
     post {
