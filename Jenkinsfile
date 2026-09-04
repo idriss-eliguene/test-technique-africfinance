@@ -54,6 +54,33 @@ pipeline {
                 '''
             }
         }
+
+        stage('Docker Build') {
+            agent {
+                label 'container-build'
+            }
+            steps {
+                echo 'Construction de l’image Docker candidate'
+                sh 'docker build -t africfinance-app:ci-${BUILD_NUMBER} .'
+            }
+        }
+
+        stage('Trivy') {
+            agent {
+                label 'container-build'
+            }
+            steps {
+                echo 'Contrôle Trivy de l’image avant promotion'
+                sh '''
+                    trivy image \
+                      --scanners vuln \
+                      --severity HIGH,CRITICAL \
+                      --ignore-unfixed \
+                      --exit-code 1 \
+                      africfinance-app:ci-${BUILD_NUMBER}
+                '''
+            }
+        }
     }
 
     post {

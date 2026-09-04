@@ -2,6 +2,7 @@
 target/
 dependency-check-report.*
 .dependency-check/
+.trivycache/
 
 # Fichiers générés par les IDE
 .idea/
