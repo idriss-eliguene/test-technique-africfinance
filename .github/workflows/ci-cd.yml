@@ -37,6 +37,15 @@ jobs:
         with:
           config: p/java
 
+      - name: Vérifier la présence de la clé NVD
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          if [ -z "$NVD_API_KEY" ]; then
+            echo "Le secret NVD_API_KEY est requis pour l'analyse Dependency-Check."
+            exit 1
+          fi
+
       - name: SCA — analyser les dépendances Maven
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
@@ -44,7 +53,7 @@ jobs:
           mvn org.owasp:dependency-check-maven:12.1.0:check
           -DfailBuildOnCVSS=7.0
           -Dformats=HTML,JSON
-          -Dnvd.api.key="$NVD_API_KEY"
+          -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
 
       - name: Publier le rapport Dependency-Check
         if: always()
@@ -58,7 +67,7 @@ jobs:
         run: docker build -t africfinance-app:ci-${{ github.sha }} .
 
       - name: Trivy — contrôler l'image avant promotion
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: africfinance-app:ci-${{ github.sha }}
           version: v0.70.0

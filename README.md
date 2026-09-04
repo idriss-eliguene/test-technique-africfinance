@@ -259,14 +259,15 @@ seront intégrés. Le runtime Docker applique un utilisateur non-root.
 
 | Secret | Utilisation | Portée |
 |--------|-------------|--------|
-| `NVD_API_KEY` | Accélérer et fiabiliser les téléchargements NVD de Dependency-Check | Secret GitHub optionnel, limité au workflow CI |
+| `NVD_API_KEY` | Accès NVD utilisé par OWASP Dependency-Check | Secret GitHub requis, jamais versionné |
 | `GITHUB_TOKEN` | Authentification et publication dans GHCR | Token natif du workflow, permission `packages: write` |
 | `ghcr-credentials` | Authentification GHCR du Jenkinsfile | Credential Jenkins username/password sur l'agent de publication |
 
-Aucun secret n'est requis pour les étapes de build, de test, de SAST, de
-construction d'image ou de scan Trivy. Les credentials Jenkins doivent être
-créés dans Jenkins sans valeur en clair dans le dépôt et avec une portée
-minimale.
+Le secret `NVD_API_KEY` est stocké dans GitHub Actions Secrets et transmis à
+Dependency-Check par variable d'environnement. Il n'est jamais affiché ni
+versionné. Son absence arrête explicitement l'analyse SCA. Les credentials
+Jenkins `nvd-api-key` et `ghcr-credentials` doivent être créés dans Jenkins
+sans valeur en clair dans le dépôt et avec une portée minimale.
 
 ## Exploitation
 

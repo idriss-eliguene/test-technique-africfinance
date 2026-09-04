@@ -55,11 +55,18 @@ pipeline {
         stage('SCA') {
             steps {
                 echo 'Analyse SCA des dépendances Maven'
-                sh '''
-                    mvn org.owasp:dependency-check-maven:12.1.0:check \
-                      -DfailBuildOnCVSS=7.0 \
-                      -Dformats=HTML,JSON
-                '''
+                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+                    sh '''
+                        if [ -z "$NVD_API_KEY" ]; then
+                          echo "Le credential nvd-api-key est requis pour l'analyse Dependency-Check."
+                          exit 1
+                        fi
+                        mvn org.owasp:dependency-check-maven:12.1.0:check \
+                          -DfailBuildOnCVSS=7.0 \
+                          -Dformats=HTML,JSON \
+                          -DnvdApiKeyEnvironmentVariable=NVD_API_KEY
+                    '''
+                }
             }
         }
 
