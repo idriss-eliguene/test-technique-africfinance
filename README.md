@@ -16,14 +16,13 @@ dans un environnement Jenkins.
 - [Jenkins](#jenkins)
 - [Frontières de confiance](#frontières-de-confiance)
 - [Secrets et credentials](#secrets-et-credentials)
+- [Déploiement distant](#déploiement-distant)
+- [État de validation](#état-de-validation)
 - [Exploitation](#exploitation)
 - [Dépannage](#dépannage)
 - [Limites et évolutions](#limites-et-évolutions)
 
 ## Architecture
-
-Les éléments en pointillés représentent des intégrations prévues mais absentes
-de la configuration actuelle.
 
 ```mermaid
 flowchart LR
@@ -37,10 +36,11 @@ flowchart LR
     TRIVY -->|PASS| GATE[Promotion Gate]
     TRIVY -->|FAIL| STOP[Pipeline stopped]
     GATE --> REG[GHCR]
-    REG -.-> SSH[SSH Deployment]
-    SSH -.-> VPS[VPS / Container]
-    VPS -.-> HC[Healthcheck]
-    HC -.-> DAST[DAST]
+    REG -->|SSH contrôlé| VPS[VPS Linux]
+    VPS --> DOCKER[Docker]
+    DOCKER --> APP[Spring Boot :8080]
+    APP --> HC[Healthcheck HTTP]
+    HC --> DAST[OWASP ZAP advisory]
 ```
 
 ## Application
@@ -112,9 +112,10 @@ Les contrôles sont appliqués sur des surfaces complémentaires :
 | Dépendances applicatives | SCA | Trivy filesystem | Vulnérabilités des composants |
 | Container | Image scanning | Trivy image | Vulnérabilités de l'artefact |
 | Runtime | Least privilege | Docker non-root | Réduction des privilèges |
+| HTTP runtime | DAST | OWASP ZAP Baseline | Analyse dynamique advisory |
 
-Le DAST HTTP avec OWASP ZAP appartient à une intégration ultérieure et n'est
-pas présent dans la configuration actuelle.
+Le DAST HTTP avec OWASP ZAP est exécuté après le healthcheck via un tunnel SSH
+et reste advisory.
 
 ### Security gates
 
@@ -130,10 +131,10 @@ FAIL
 Pipeline stopped
 ```
 
-La promotion de l'image est bloquée lorsqu'une vulnérabilité `HIGH` ou
-`CRITICAL` corrigible est détectée par Trivy. Les vulnérabilités sans correctif
-disponible sont signalées mais ne bloquent pas cette gate. Une erreur de
-scanner ou une violation de seuil bloque le pipeline.
+Trivy analyse le repository et l'image avec les sévérités `HIGH,CRITICAL` et
+`ignore-unfixed`. Les findings sont actuellement advisory ; une erreur
+technique d'exécution du scanner reste bloquante. Les tests, le packaging, le
+build Docker, GHCR, SSH, le pull, le run et le healthcheck restent bloquants.
 
 Une image construite n'est pas automatiquement déployable. Elle devient
 candidate à la promotion uniquement après les contrôles applicables :
@@ -174,11 +175,12 @@ Il orchestre les étapes suivantes avec Java 21 et le cache Maven :
 4. SAST Semgrep ;
 5. SCA Trivy filesystem ;
 6. construction de l'image Docker ;
-7. gate Trivy sur l'image construite ;
-8. authentification et publication dans GHCR.
-
-Le workflow ne contient actuellement aucune connexion SSH ni aucun déploiement
-VPS.
+7. scan Trivy de l'image en advisory ;
+8. authentification et publication dans GHCR ;
+9. déploiement SSH de l'image `sha-<git-sha>` ;
+10. healthcheck HTTP ;
+11. scan OWASP ZAP Baseline advisory via tunnel SSH ;
+12. résumé GitHub du déploiement.
 
 Le workflow utilise les permissions minimales `contents: read` et
 `packages: write`. L'authentification GHCR repose sur `GITHUB_TOKEN` et ne
@@ -252,8 +254,8 @@ Runtime
 Le repository fournit le code et la configuration. Le runner GitHub Actions,
 ou l'agent Jenkins dédié, exécute les builds dans un environnement séparé.
 Les gates contrôlent l'artefact avant toute promotion. Le registre, la
-connexion SSH et le VPS constituent des frontières distinctes lorsqu'ils
-seront intégrés. Le runtime Docker applique un utilisateur non-root.
+connexion SSH et le VPS constituent des frontières distinctes. Le runtime
+Docker applique un utilisateur non-root.
 
 ## Secrets et credentials
 
@@ -261,9 +263,213 @@ seront intégrés. Le runtime Docker applique un utilisateur non-root.
 |--------|-------------|--------|
 | `GITHUB_TOKEN` | Authentification et publication dans GHCR | Token natif du workflow, permission `packages: write` |
 | `ghcr-credentials` | Authentification GHCR du Jenkinsfile | Credential Jenkins username/password sur l'agent de publication |
+| `VPS_HOST` | Adresse DNS du VPS | GitHub Actions Secrets |
+| `VPS_USER` | Utilisateur SSH de déploiement | GitHub Actions Secrets |
+| `VPS_SSH_KEY` | Clé privée SSH | GitHub Actions Secrets |
+| `VPS_KNOWN_HOSTS` | Clés hôtes SSH approuvées | GitHub Actions Secrets |
+| `VPS_PORT` | Port SSH optionnel | GitHub Actions Secrets, `22` par défaut |
+| `GHCR_DEPLOY_USERNAME` | Utilisateur de lecture GHCR si package privé | GitHub Actions Secrets, optionnel si package public |
+| `GHCR_DEPLOY_TOKEN` | Token `read:packages` si package privé | GitHub Actions Secrets, optionnel si package public |
 
 Les credentials Jenkins `ghcr-credentials` doivent être créés dans Jenkins
 sans valeur en clair dans le dépôt et avec une portée minimale.
+
+Le déploiement utilise `scripts/deploy.sh`, tire l'image immuable
+`sha-<git-sha>`, remplace `africfinance-app`, transmet `APP_ENV=production` et
+vérifie `GET /` avec plusieurs tentatives. Pour un package GHCR privé, le token
+de lecture est transmis à `docker login` via `--password-stdin`.
+
+Le VPS doit disposer de Linux, Docker Engine, de la clé publique SSH dans
+`authorized_keys`, d'un utilisateur autorisé à accéder au daemon Docker et d'un
+pare-feu autorisant le port SSH. L'appartenance au groupe `docker` équivaut à
+un niveau de privilège root sur l'hôte ; rootless Docker ou un mécanisme sudo
+très restreint sont préférables en production durcie.
+
+## Déploiement distant
+
+Le pipeline contient le mécanisme de Continuous Deployment vers un serveur
+Linux distant équipé de Docker et accessible par SSH. Aucune infrastructure VPS
+ni aucun credential SSH n'ayant été fourni dans le cadre du test technique, le
+déploiement distant n'a pas été exécuté sur une cible réelle.
+
+Par défaut, lorsque `ENABLE_VPS_DEPLOYMENT` est absente ou différente de
+`true`, les étapes suivantes sont ignorées proprement :
+
+- SSH Deploy : skipped ;
+- healthcheck distant : skipped ;
+- DAST : skipped.
+
+Les étapes CI et la publication GHCR restent exécutables. Le déploiement est
+activé uniquement sur `master` lorsque `ENABLE_VPS_DEPLOYMENT` vaut `true`.
+
+### Activer le déploiement
+
+Configurer une variable de repository dans :
+
+```text
+GitHub → repository → Settings → Secrets and variables → Actions
+       → Variables → New repository variable
+```
+
+```text
+Name:  ENABLE_VPS_DEPLOYMENT
+Value: true
+```
+
+Cette variable n'est pas un secret. Elle ne doit être définie à `true` qu'après
+la configuration complète du VPS et des secrets SSH ci-dessous.
+
+### Secrets SSH
+
+Créer chaque secret dans :
+
+```text
+GitHub → repository → Settings → Secrets and variables → Actions
+       → Secrets → New repository secret
+```
+
+| Nom | Description | Valeur / obtention |
+| --- | --- | --- |
+| `VPS_HOST` | Adresse IP publique ou nom DNS du serveur Linux cible | Adresse du VPS ; `203.0.113.10` est uniquement un exemple documentaire |
+| `VPS_USER` | Utilisateur Linux de connexion SSH | Par exemple `deploy` |
+| `VPS_PORT` | Port SSH du serveur | Généralement `22` |
+| `VPS_SSH_KEY` | Clé privée ED25519 dédiée au déploiement | Contenu complet de `~/.ssh/africfinance-github-actions` |
+| `VPS_KNOWN_HOSTS` | Clé d'hôte SSH vérifiée | Contenu complet du fichier known_hosts préparé après vérification |
+
+Générer une clé dédiée si nécessaire :
+
+```bash
+ssh-keygen -t ed25519 \
+  -f ~/.ssh/africfinance-github-actions \
+  -C "github-actions-africfinance"
+```
+
+Installer uniquement la clé publique dans
+`~/.ssh/authorized_keys` du compte `VPS_USER` :
+
+```text
+~/.ssh/africfinance-github-actions.pub
+```
+
+La valeur de `VPS_SSH_KEY` correspond au contenu complet de la clé privée,
+incluant les marqueurs `-----BEGIN OPENSSH PRIVATE KEY-----` et
+`-----END OPENSSH PRIVATE KEY-----`. Cette clé ne doit jamais être versionnée.
+
+Pour préparer `VPS_KNOWN_HOSTS`, récupérer la clé d'hôte :
+
+```bash
+ssh-keyscan -t ed25519 -p 22 VPS_HOST
+```
+
+`ssh-keyscan` ne vérifie pas à lui seul l'identité du serveur. Comparer
+l'empreinte avec la console du fournisseur ou directement sur le VPS :
+
+```bash
+sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Après comparaison, enregistrer la valeur approuvée :
+
+```bash
+ssh-keyscan -t ed25519 -p 22 VPS_HOST > ~/.ssh/africfinance-known_hosts
+```
+
+Le contenu complet de `~/.ssh/africfinance-known_hosts` devient la valeur du
+secret `VPS_KNOWN_HOSTS`.
+
+### GHCR privé
+
+Si le package GHCR est public, aucun credential de registry supplémentaire
+n'est nécessaire sur le VPS. S'il est privé, créer également :
+
+| Nom | Description |
+| --- | --- |
+| `GHCR_DEPLOY_USERNAME` | Compte autorisé à lire le package |
+| `GHCR_DEPLOY_TOKEN` | Token limité à `read:packages` |
+
+Le token est transmis à Docker avec `--password-stdin` et ne doit jamais être
+documenté en clair.
+
+### Tableau récapitulatif
+
+| Nom | Type | Obligatoire | Description |
+| --- | --- | --- | --- |
+| `ENABLE_VPS_DEPLOYMENT` | Variable | Oui pour activer le CD | Active le déploiement distant |
+| `VPS_HOST` | Secret | Oui | IP ou DNS du VPS |
+| `VPS_USER` | Secret | Oui | Utilisateur SSH |
+| `VPS_PORT` | Secret | Selon le workflow | Port SSH, généralement `22` |
+| `VPS_SSH_KEY` | Secret | Oui | Clé privée ED25519 de déploiement |
+| `VPS_KNOWN_HOSTS` | Secret | Oui | Clé d'hôte SSH vérifiée |
+| `GHCR_DEPLOY_USERNAME` | Secret | Si GHCR privé | Compte autorisé à pull |
+| `GHCR_DEPLOY_TOKEN` | Secret | Si GHCR privé | Token limité à `read:packages` |
+
+### Prérequis VPS
+
+Le serveur cible doit disposer de :
+
+- Linux ;
+- Docker Engine ;
+- `curl` ;
+- OpenSSH Server ;
+- la clé publique installée dans `authorized_keys` ;
+- un utilisateur `VPS_USER` autorisé à accéder au daemon Docker ;
+- une connectivité sortante vers `ghcr.io` ;
+- un port SSH accessible depuis le runner GitHub Actions ;
+- le port applicatif `8080` disponible.
+
+L'accès au groupe `docker` confère des privilèges très élevés, comparables à
+root sur l'hôte. Rootless Docker ou un mécanisme `sudo` très restreint sont
+préférables dans un environnement durci.
+
+### Flux de déploiement
+
+```mermaid
+flowchart TD
+    PUSH[Push master] --> CI[CI]
+    CI --> BUILD[Build image]
+    BUILD --> SCAN[Security scans]
+    SCAN --> GHCR[GHCR Push]
+    GHCR --> ENABLE{ENABLE_VPS_DEPLOYMENT == true ?}
+    ENABLE -->|Non| SKIP[Deploy / Healthcheck / DAST skipped]
+    ENABLE -->|Oui| SECRETS[Validation des secrets]
+    SECRETS --> SSH[SSH]
+    SSH --> PULL[docker pull sha-${GITHUB_SHA}]
+    PULL --> REMOVE[Remove old container if present]
+    REMOVE --> RUN[docker run]
+    RUN --> HC[HTTP healthcheck]
+    HC --> ZAP[DAST advisory]
+```
+
+Lorsque la variable vaut `true`, le workflow valide les secrets obligatoires
+avant toute tentative SSH, transmet `APP_ENV=production`, récupère l'image
+`sha-${GITHUB_SHA}`, remplace le conteneur existant puis vérifie `GET /` avec
+plusieurs tentatives. Un secret obligatoire absent provoque un échec explicite
+avant la tentative SSH.
+
+Le script distant prêt à l'emploi est `scripts/deploy.sh`.
+
+### Déclencher le pipeline
+
+Un push sur `master` déclenche le workflow :
+
+```bash
+git push origin master
+```
+
+L'exécution peut être suivie depuis :
+
+```text
+GitHub → repository → Actions → workflow CI/CD
+```
+
+## État de validation
+
+Le pipeline CI/CD et le mécanisme de déploiement SSH sont implémentés. La CI,
+la construction Docker et la publication GHCR sont exécutées selon les runs
+GitHub Actions disponibles. Aucune infrastructure VPS ni aucun credential SSH
+n'ayant été fourni dans le cadre du test technique, le déploiement distant, le
+healthcheck distant et le DAST distant n'ont pas été exécutés sur une cible
+réelle. Jenkins est fourni comme alternative et n'a pas été exécuté.
 
 ## Exploitation
 
@@ -329,3 +535,8 @@ incluent :
 - gestionnaire de secrets ;
 - SBOM, provenance et signature d'images ;
 - policy-as-code.
+
+Le déploiement actuel reste single-container, sans rollback automatique,
+blue/green, reverse proxy ou TLS. Les scanners SAST, SCA et image sont
+temporairement advisory ; leurs findings doivent être traités avant une mise
+en production durcie.
