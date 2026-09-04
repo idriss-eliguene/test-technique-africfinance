@@ -1,0 +1,11 @@
+# Artefacts Maven
+target/
+
+# Fichiers générés par les IDE
+.idea/
+*.iml
+.vscode/
+
+# Fichiers système
+.DS_Store
+
