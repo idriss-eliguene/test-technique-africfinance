@@ -1,4 +1,12 @@
 pipeline {
+    parameters {
+        string(name: 'GHCR_IMAGE', defaultValue: '', description: 'Référence GHCR complète, en minuscules (ex. ghcr.io/organisation/africfinance-app)')
+    }
+
+    environment {
+        GHCR_IMAGE = "${params.GHCR_IMAGE}"
+    }
+
     // Agent Docker requis côté Jenkins pour garantir Java 21 et Maven.
     agent {
         docker {
@@ -79,6 +87,23 @@ pipeline {
                       --exit-code 1 \
                       africfinance-app:ci-${BUILD_NUMBER}
                 '''
+            }
+        }
+
+        stage('Registry Login and Push') {
+            agent {
+                label 'container-build'
+            }
+            steps {
+                echo 'Publication de l’image validée dans GHCR'
+                withCredentials([usernamePassword(credentialsId: 'ghcr-credentials', usernameVariable: 'GHCR_USERNAME', passwordVariable: 'GHCR_PASSWORD')]) {
+                    sh '''
+                        test -n "$GHCR_IMAGE"
+                        echo "$GHCR_PASSWORD" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+                        docker tag africfinance-app:ci-${BUILD_NUMBER} "$GHCR_IMAGE:sha-${GIT_COMMIT}"
+                        docker push "$GHCR_IMAGE:sha-${GIT_COMMIT}"
+                    '''
+                }
             }
         }
     }

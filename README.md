@@ -22,9 +22,8 @@ dans un environnement Jenkins.
 
 ## Architecture
 
-Le flux opérationnel actuel s'arrête après le contrôle Trivy. Les éléments en
-pointillés représentent des intégrations prévues mais absentes de la
-configuration actuelle.
+Les éléments en pointillés représentent des intégrations prévues mais absentes
+de la configuration actuelle.
 
 ```mermaid
 flowchart LR
@@ -37,7 +36,7 @@ flowchart LR
     BUILD --> TRIVY[Trivy]
     TRIVY -->|PASS| GATE[Promotion Gate]
     TRIVY -->|FAIL| STOP[Pipeline stopped]
-    GATE -.-> REG[Registry]
+    GATE --> REG[GHCR]
     REG -.-> SSH[SSH Deployment]
     SSH -.-> VPS[VPS / Container]
     VPS -.-> HC[Healthcheck]
@@ -99,9 +98,8 @@ Runtime Verification
 ```
 
 Un artefact ne progresse vers l'étape suivante que lorsque les gates
-bloquantes précédentes réussissent. La configuration actuelle s'arrête après
-la gate Trivy ; aucune publication de registre ni aucun déploiement distant
-n'est configuré.
+bloquantes précédentes réussissent. La publication GHCR intervient uniquement
+après le build, le scan Trivy et la réussite de la gate de promotion.
 
 ## Chaîne DevSecOps
 
@@ -176,15 +174,42 @@ Il orchestre les étapes suivantes avec Java 21 et le cache Maven :
 4. SAST Semgrep ;
 5. SCA OWASP Dependency-Check ;
 6. construction de l'image Docker ;
-7. gate Trivy sur l'image construite.
+7. gate Trivy sur l'image construite ;
+8. authentification et publication dans GHCR.
 
-Le workflow ne contient actuellement aucune authentification de registre,
-publication GHCR, connexion SSH ou déploiement VPS. Le rapport
-Dependency-Check est conservé comme artefact du workflow.
+Le workflow ne contient actuellement aucune connexion SSH ni aucun déploiement
+VPS. Le rapport Dependency-Check est conservé comme artefact du workflow.
 
-Les permissions par défaut du workflow suffisent aux étapes actuelles. Une
-future publication GHCR devra ajouter explicitement la permission minimale
-`packages: write` au job concerné.
+Le workflow utilise les permissions minimales `contents: read` et
+`packages: write`. L'authentification GHCR repose sur `GITHUB_TOKEN` et ne
+nécessite pas de PAT supplémentaire.
+
+## Registry et promotion des images
+
+GHCR est le registre des images publiées par GitHub Actions. L'image est
+construite et analysée une seule fois, puis retaguée et poussée après la gate
+Trivy ; aucun rebuild n'intervient entre le scan et la publication.
+
+Les références publiées sont :
+
+```text
+ghcr.io/<owner>/africfinance-app:sha-<git-sha>
+ghcr.io/<owner>/africfinance-app:latest
+```
+
+Le tag `sha-<git-sha>` est immuable dans la convention de livraison et assure
+la traçabilité du commit vers l'image. Le tag `latest` est associé aux
+exécutions sur `master`. L'image publiée est le même artefact que celui
+analysé par Trivy.
+
+La séquence de promotion est :
+
+```text
+Build → Scan → Promote → Deploy
+```
+
+Une violation d'une gate ou un échec d'authentification GHCR arrête le
+pipeline avant publication.
 
 ## Jenkins
 
@@ -235,11 +260,13 @@ seront intégrés. Le runtime Docker applique un utilisateur non-root.
 | Secret | Utilisation | Portée |
 |--------|-------------|--------|
 | `NVD_API_KEY` | Accélérer et fiabiliser les téléchargements NVD de Dependency-Check | Secret GitHub optionnel, limité au workflow CI |
+| `GITHUB_TOKEN` | Authentification et publication dans GHCR | Token natif du workflow, permission `packages: write` |
+| `ghcr-credentials` | Authentification GHCR du Jenkinsfile | Credential Jenkins username/password sur l'agent de publication |
 
-Aucun secret n'est requis pour les étapes actuelles de build, de test, de
-SAST, de construction d'image ou de scan Trivy. Les futures credentials GHCR
-et SSH devront être stockées dans le gestionnaire de secrets du moteur CI,
-avec une portée et des permissions minimales.
+Aucun secret n'est requis pour les étapes de build, de test, de SAST, de
+construction d'image ou de scan Trivy. Les credentials Jenkins doivent être
+créés dans Jenkins sans valeur en clair dans le dépôt et avec une portée
+minimale.
 
 ## Exploitation
 
