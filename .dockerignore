@@ -1,0 +1,15 @@
+# Artefacts générés localement : le JAR est compilé dans l'étape Docker.
+target/
+
+# Métadonnées Git et CI non nécessaires au contexte de build.
+.git/
+.github/
+
+# Fichiers générés par les IDE.
+.idea/
+.vscode/
+*.iml
+
+# Fichiers système locaux.
+.DS_Store
+
