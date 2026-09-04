@@ -67,7 +67,7 @@ pipeline {
                       --scanners vuln \
                       --severity HIGH,CRITICAL \
                       --ignore-unfixed \
-                      --exit-code 0 \
+                      --exit-code 1 \
                       .
                 '''
             }
@@ -94,7 +94,7 @@ pipeline {
                       --scanners vuln \
                       --severity HIGH,CRITICAL \
                       --ignore-unfixed \
-                      --exit-code 0 \
+                      --exit-code 1 \
                       africfinance-app:ci-${BUILD_NUMBER}
                 '''
             }

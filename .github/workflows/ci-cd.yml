@@ -33,7 +33,7 @@ jobs:
         run: mvn package -DskipTests
 
       - name: SAST — analyser le code avec Semgrep
-        run: docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.139.0 scan --config p/java /src
+        run: docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.139.0 semgrep scan --config p/java /src
 
       - name: SCA — analyser le repository avec Trivy
         uses: aquasecurity/trivy-action@v0.36.0
@@ -44,7 +44,7 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '0'
+          exit-code: '1'
 
       - name: Construire l'image Docker candidate
         run: docker build -t africfinance-app:ci-${{ github.sha }} .
@@ -57,7 +57,7 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '0'
+          exit-code: '1'
 
       - name: Préparer les tags GHCR sans reconstruire l'image
         env:

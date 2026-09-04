@@ -12,7 +12,7 @@ COPY src ./src
 RUN mvn -B clean package
 
 # Étape d'exécution : image JRE séparée, sans Maven ni outils de build.
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-noble
 
 WORKDIR /app
 
