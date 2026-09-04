@@ -132,9 +132,10 @@ Pipeline stopped
 ```
 
 Trivy analyse le repository et l'image avec les sévérités `HIGH,CRITICAL` et
-`ignore-unfixed`. Les findings sont actuellement advisory ; une erreur
-technique d'exécution du scanner reste bloquante. Les tests, le packaging, le
-build Docker, GHCR, SSH, le pull, le run et le healthcheck restent bloquants.
+`ignore-unfixed`. Une vulnérabilité correspondante bloque la promotion avec un
+code de sortie non nul ; une erreur technique d'exécution du scanner est
+également bloquante. Les tests, le packaging, le build Docker, GHCR, SSH, le
+pull, le run et le healthcheck restent bloquants.
 
 Une image construite n'est pas automatiquement déployable. Elle devient
 candidate à la promotion uniquement après les contrôles applicables :
@@ -163,9 +164,12 @@ docker run --rm --name africfinance-app -p 8080:8080 africfinance-app:local
 
 ## GitHub Actions
 
-Le workflow `.github/workflows/ci-cd.yml` constitue le moteur d'exécution
-principal. Il est déclenché par un push vers `master` ou par
-`workflow_dispatch`.
+Le workflow [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
+constitue le moteur d'exécution principal. Il est déclenché par un push vers
+`master` ou par `workflow_dispatch`.
+
+L'[historique des exécutions GitHub Actions](https://github.com/idriss-eliguene/test-technique-africfinance/actions)
+permet de suivre les jobs et leurs logs.
 
 Il orchestre les étapes suivantes avec Java 21 et le cache Maven :
 
@@ -175,7 +179,7 @@ Il orchestre les étapes suivantes avec Java 21 et le cache Maven :
 4. SAST Semgrep ;
 5. SCA Trivy filesystem ;
 6. construction de l'image Docker ;
-7. scan Trivy de l'image en advisory ;
+7. scan Trivy de l'image avec gate bloquante ;
 8. authentification et publication dans GHCR ;
 9. déploiement SSH de l'image `sha-<git-sha>` ;
 10. healthcheck HTTP ;
@@ -232,10 +236,12 @@ pipeline avant publication.
 
 ## Jenkins
 
-Le fichier `Jenkinsfile` fournit l'équivalent Jenkins de la chaîne :
+Le fichier [`Jenkinsfile`](Jenkinsfile) fournit une implémentation alternative
+de la chaîne Jenkins :
 
 ```text
-Checkout → Tests → Packaging → SAST → Trivy FS/SCA → Docker Build → Trivy Image
+Checkout → Tests → Packaging → SAST → Trivy FS/SCA → Docker Build →
+Trivy Image → Registry Login and Push → Deploy + Healthcheck
 ```
 
 Les étapes Maven peuvent utiliser un agent conteneurisé Java 21/Maven. Les
@@ -246,6 +252,10 @@ Cet agent doit disposer de Docker, Trivy, d'un espace disque suffisant, d'un
 accès réseau contrôlé et d'un workspace isolé. Le contrôleur Jenkins conserve
 un rôle d'orchestration et n'est pas utilisé comme worker de build. Le socket
 Docker du contrôleur n'est pas exposé aux conteneurs de jobs.
+
+La publication utilise le credential Jenkins `ghcr-credentials`. Le
+déploiement utilise les credentials SSH et known-hosts dédiés. Le
+`Jenkinsfile` n'a pas été exécuté dans cet environnement.
 
 ## Frontières de confiance
 
@@ -554,6 +564,7 @@ incluent :
 - policy-as-code.
 
 Le déploiement actuel reste single-container, sans rollback automatique,
-blue/green, reverse proxy ou TLS. Les scanners SAST, SCA et image sont
-temporairement advisory ; leurs findings doivent être traités avant une mise
-en production durcie.
+blue/green, reverse proxy ou TLS. Semgrep reste informatif sur les findings
+mais bloque sur une erreur technique ; les gates Trivy SCA et image sont
+bloquantes pour les vulnérabilités `HIGH,CRITICAL` corrigibles. OWASP ZAP reste
+advisory.
