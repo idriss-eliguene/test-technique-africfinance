@@ -192,6 +192,23 @@ GHCR est le registre des images publiées par GitHub Actions. L'image est
 construite et analysée une seule fois, puis retaguée et poussée après la gate
 Trivy ; aucun rebuild n'intervient entre le scan et la publication.
 
+### Artifact publié
+
+L'image Docker produite par le pipeline CI/CD est publiée dans GitHub
+Container Registry (GHCR).
+
+- Registry : `ghcr.io`
+- Image : `ghcr.io/idriss-eliguene/africfinance-app`
+- Package : <https://github.com/idriss-eliguene/test-technique-africfinance/pkgs/container/africfinance-app>
+- Les builds sont identifiés par un tag immuable dérivé du commit Git :
+  `sha-${GITHUB_SHA}`.
+
+Exemple :
+
+```bash
+docker pull ghcr.io/idriss-eliguene/africfinance-app:<tag>
+```
+
 Les références publiées sont :
 
 ```text
