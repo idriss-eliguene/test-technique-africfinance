@@ -6,13 +6,16 @@ le build, les tests, l'analyse, la conteneurisation et le déploiement.
 
 ## État actuel
 
-La première étape contient :
+Le projet contient actuellement :
 
 - Java 21 ;
 - Spring Boot ;
 - Maven ;
 - un endpoint HTTP `GET /` ;
-- un test MVC.
+- un test MVC ;
+- une image Docker multi-stage ;
+- un pipeline CI de référence GitHub Actions ;
+- un Jenkinsfile équivalent fourni comme variante non exécutée.
 
 ## Architecture applicative
 
@@ -87,6 +90,44 @@ Puis :
 curl http://localhost:8080/
 ```
 
+## Moteurs CI/CD fournis
+
+### GitHub Actions
+
+GitHub Actions est le pipeline de référence et l'implémentation opérationnelle
+prévue pour ce dépôt. Il est déclenché automatiquement sur un push vers
+`master` et peut également être lancé manuellement avec `workflow_dispatch`.
+Il exécute les tests Maven puis le packaging du JAR. Son exécution réelle doit
+être confirmée dans GitHub après publication du dépôt.
+
+### Jenkins
+
+Le `Jenkinsfile` fournit une implémentation alternative de la même logique CI :
+checkout, tests Maven et packaging. Il n'a pas été exécuté dans le cadre du
+test, car aucune instance Jenkins n'est disponible ; il ne doit donc pas être
+présenté comme certifié.
+
+| Pipeline | Implémenté | Exécuté | Rôle |
+|----------|------------|---------|------|
+| GitHub Actions | Oui | À confirmer après push | Pipeline de référence |
+| Jenkinsfile | Oui | Non | Variante compatible Jenkins |
+
+Les deux pipelines suivent le même flux : source, tests Maven, puis packaging
+du JAR, avec Java 21.
+
+```mermaid
+flowchart TD
+    SRC[Code source] --> GHA[GitHub Actions]
+    SRC --> JENKINS[Jenkins]
+    GHA --> TESTS1[Tests Maven]
+    JENKINS --> TESTS2[Tests Maven]
+    TESTS1 --> PKG1[Packaging JAR]
+    TESTS2 --> PKG2[Packaging JAR]
+```
+
+GitHub Actions est utilisé comme implémentation opérationnelle dans le cadre
+du test.
+
 ## Architecture cible
 
 Cette architecture correspond à la cible du test et non à l'état déjà implémenté.
@@ -110,8 +151,8 @@ Cette architecture représente la cible du test. Les composants seront ajoutés 
 
 - [x] Application Spring Boot
 - [x] Test applicatif
-- [ ] Conteneurisation Docker
-- [ ] Pipeline GitHub Actions
+- [x] Conteneurisation Docker
+- [x] Pipeline GitHub Actions
 - [ ] SAST / SCA
 - [ ] Scan de l'image
 - [ ] Publication GHCR

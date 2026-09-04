@@ -1,0 +1,29 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: Tests et packaging
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Configurer Java 21 et le cache Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Exécuter les tests Maven
+        run: mvn clean test
+
+      - name: Construire le package Maven
+        run: mvn package -DskipTests
